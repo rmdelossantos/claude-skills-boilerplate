@@ -1,6 +1,6 @@
 ---
 name: ship
-description: "End-to-end delivery pipeline: reframes an open-ended request, plans it, implements in a worktree on a draft PR, then reviews, tidies, and drives CI to green with a handover. Only use when the user explicitly asks to ship something or invokes /ship."
+description: "End-to-end delivery pipeline: reframes an open-ended request, plans it, implements test-first (Red → Green → Refactor) in a worktree on a draft PR, then reviews, tidies, and drives CI to green with a handover. Only use when the user explicitly asks to ship something or invokes /ship."
 ---
 
 ## Goals
@@ -14,6 +14,7 @@ Definition of done: an open-ended request delivered as a verified result via a r
 - Code changes:
   - [ ] Worked on in a worktree (not the main working copy)
   - [ ] Worked on in a branch
+  - [ ] Built test-first via `/implement` (Red → Green → Refactor per behavior)
   - [ ] Verified through `/pr-autofix`; plus `/review-loop` when `--max` (unconditional on task size or review-effort)
   - [ ] Impact on real production data analysed and posted (only when relevant; see `impact-analysis()`)
   - [ ] Added prose (markdown and code comments) is concise, non-repetitive, and readable
@@ -38,6 +39,7 @@ Read these to understand context:
 
 - `/plan-draft`
 - `/plan-polish`
+- `/implement` - test-first implementation of the plan
 - `/review-loop`
 - `/pr-autofix`
 - `/pr-description` - optional, external; PR title/description guidelines when available
@@ -217,7 +219,8 @@ If a plan comment was posted before, edit the old comment.
 
 ```
 def implement() {
-    implement the plan
+    # test-first, one behavior at a time
+    /implement $plan_file
     commit && push
 
     # only with --max. When enabled, no review-effort or "task is small"
@@ -227,7 +230,9 @@ def implement() {
     }
 
     # ensure tests and comments are lean; use fresh subagent.
-    # unattended runs skip its approval gate — the PR is the review surface
+    # unattended runs skip its approval gate — the PR is the review surface.
+    # It may consolidate tests but must not drop one that pins a behavior
+    # from a RED step; the suite must stay green afterwards.
     subagent { apply /tidy-branch }
 
     tidy-prose()
