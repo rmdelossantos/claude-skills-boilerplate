@@ -1,6 +1,6 @@
 ---
 name: ship
-description: "End-to-end delivery pipeline: reframes an open-ended request, plans it, implements in a worktree on a draft PR, then reviews, tidies, and drives CI to green with a handover. Only use when the user explicitly asks to ship something or invokes /ship."
+description: "End-to-end delivery pipeline: reframes an open-ended request, plans it, implements test-first (Red → Green → Refactor) in a worktree on a draft PR, then reviews, tidies, and drives CI to green with a handover. Only use when the user explicitly asks to ship something or invokes /ship."
 ---
 
 ## Goals
@@ -14,6 +14,8 @@ Definition of done: an open-ended request delivered as a verified result via a r
 - Code changes:
   - [ ] Worked on in a worktree (not the main working copy)
   - [ ] Worked on in a branch
+  - [ ] Built test-first via `tdd()`: every behavior went Red → Green → Refactor, with a failing test run seen before any implementation code
+  - [ ] Tests follow the Testing Conventions (AAA, one assertion where possible, behavior-describing names)
   - [ ] Verified through `/pr-autofix`; plus `/review-loop` when `--max` (unconditional on task size or review-effort)
   - [ ] Impact on real production data analysed and posted (only when relevant; see `impact-analysis()`)
   - [ ] Added prose (markdown and code comments) is concise, non-repetitive, and readable
@@ -217,7 +219,11 @@ If a plan comment was posted before, edit the old comment.
 
 ```
 def implement() {
-    implement the plan
+    # test-first, one behavior at a time; never write implementation before
+    # its failing test exists
+    for each behavior in the plan {
+      tdd(behavior)
+    }
     commit && push
 
     # only with --max. When enabled, no review-effort or "task is small"
@@ -227,7 +233,9 @@ def implement() {
     }
 
     # ensure tests and comments are lean; use fresh subagent.
-    # unattended runs skip its approval gate — the PR is the review surface
+    # unattended runs skip its approval gate — the PR is the review surface.
+    # It may consolidate tests but must not drop one that pins a behavior
+    # from a RED step; the suite must stay green afterwards.
     subagent { apply /tidy-branch }
 
     tidy-prose()
@@ -239,6 +247,51 @@ def implement() {
     # bare "waiting on CI" with no data is not an acceptable final report.
 }
 ```
+
+### tdd(behavior)
+
+Red → Green → Refactor, one behavior at a time. Start by splitting the plan into behaviors and creating a todo for each phase:
+
+```
+- [ ] RED: Write failing tests for login
+- [ ] GREEN: Implement login to pass tests
+- [ ] REFACTOR: Clean up login implementation
+- [ ] RED: Write failing tests for logout
+- [ ] GREEN: Implement logout
+- [ ] REFACTOR: Clean up
+```
+
+Each phase starts with an explicit prompt, given verbatim (to yourself, or to the subagent doing the work). Don't merge phases.
+
+**RED**
+
+> Write a FAILING test for [behavior]. Do NOT write the implementation yet. The test should fail because the function/method doesn't exist.
+
+- Run the tests and confirm they fail for that reason, not because of a syntax error, bad import path, or broken fixture.
+- Keep the failing output; GREEN can't start until you've seen it.
+
+**GREEN**
+
+> Now implement the minimum code to make these tests pass. Only write enough code to pass the current tests, nothing more.
+
+- Run the full suite: the new tests pass and nothing else broke.
+- Don't add behavior that no test covers. If more behavior is needed, it starts its own RED.
+
+**REFACTOR**
+
+> Refactor the implementation to improve code quality. Tests must stay green after refactoring. Focus on: [readability / performance / removing duplication].
+
+- Pick the focus that fits what GREEN left behind.
+- Run the suite again. It must stay green, and test files change only to remove duplication.
+
+#### Testing Conventions
+
+- Arrange-Act-Assert (AAA) structure.
+- One assertion per test when possible.
+- Test names describe behavior, eg `should_return_empty_when_no_items` (adapt the casing to the language's convention).
+- Use the project's existing test framework and layout. If the project has none, set up its idiomatic one first, as part of the first RED.
+
+When a change genuinely can't be tested first (pure config, docs, generated code), say so in the PR description instead of skipping silently.
 
 ### tidy-prose()
 
